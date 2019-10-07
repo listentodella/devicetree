@@ -1,0 +1,634 @@
+
+本套视频面向这些学员：
+1. 有Linux驱动开发基础的人, 可以挑感兴趣的章节观看
+2. 没有Linux驱动开发基础但是愿意学习的人,请按顺序全部观看,
+   我会以比较简单的LED驱动为例讲解
+3. 完全没有Linux驱动知识，又不想深入学习的人, 比如应用开发人员，不得已要改改驱动, 
+   等全部录完后，我会更新本文档，那时再列出您需要观看的章节。
+
+第一课．设备树的引入与体验
+第01节_字符设备驱动程序的三种写法
+a. 驱动程序编写有3种方法：传统方法、使用总线设备驱动模型、使用设备树
+b. 这3种方法也核心都是一样的: 分配、设置、注册 file_operations结构体
+   这个结构体中有.open, .read, .write, .ioctl等成员
+   驱动程序要实现这些成员，在这些成员函数中操作硬件
+c. 这3种方法的差别在于：如何指定硬件资源，比如如何指定LED引脚是哪个      
+c.1 传统方法: 在驱动程序代码中写死硬件资源, 代码简单/不易扩展
+c.2 总线设备驱动模型: 把驱动程序分为两部分(platform_driver, platform_device)
+    在platform_device中指定硬件资源,
+    在platform_driver中分配/设置/注册 file_operations结构体, 并从platform_device获得硬件资源
+    
+    特点：
+    易于扩展，但是有很多冗余代码(每种配置都对应一个platform_device结构体), 
+    硬件有变动时需要重新编译内核或驱动程序。
+    
+c.3 使用设备树指定硬件资源: 驱动程序也分为两部分(platform_driver, 设备树*.dts)
+    在设备树*.dts中指定硬件资源, dts被编译为dtb文件, 在启动单板时会将dtb文件传给内核,
+    内核根据dtb文件分配/设置/注册多个platform_device
+    
+    platform_driver的编写方法跟"总线设备驱动模型"一样。
+    
+    特点：
+    易于扩展，没有冗余代码
+    硬件有变动时不需要重新编译内核或驱动程序，只需要提供不一样的dtb文件
+    
+    注: dts  - device tree source  // 设备树源文件
+        dtb  - device tree blob    // 设备树二进制文件, 由dts编译得来
+        blob - binary large object
+    
+    
+
+第02节_字符设备驱动的传统写法
+a. 分配file_operations结构体
+b. 设置file_operations结构体
+   该结构体中有.open,.read,.write等成员,
+   在这些成员函数中去操作硬件
+c. 注册file_operations结构体:
+   register_chrdev(major, name, &fops)
+d. 入口函数: 调用register_chrdev
+e. 出口函数: 调用unregister_chrdev
+
+
+第03节_字符设备驱动的编译测试
+
+第04节_总线设备驱动模型
+a. 驱动程序分为platform_device和platform_driver两部分
+   platform_device : 指定硬件资源
+   platform_driver : 根据与之匹配的platform_device获得硬件资源, 并分配/设置/注册file_operations
+b. 如何确定platform_device和platform_driver是否匹配?
+b.1 platform_device含有name
+b.2 platform_driver.id_table"可能"指向一个数组, 每个数组项都有name, 表示该platform_driver所能支持的platform_device
+b.3  platform_driver.driver含有name, 表示该platform_driver所能支持的platform_device
+b.4 优先比较b.1, b.2两者的name, 若相同则表示互相匹配
+b.5 如果platform_driver.id_table为NULL, 则比较b.1, b.3两者的name, 若相同则表示互相匹配
+
+总线设备驱动模型只是一个编程技巧, 它把驱动程序分为"硬件相关的部分"、"变化不大的驱动程序本身", 
+这个技巧并不是驱动程序的核心, 
+核心仍然是"分配/设置/注册file_operations"
+
+第05节_使用设备树时对应的驱动编程
+a. 使用"总线设备驱动模型"编写的驱动程序分为platform_device和platform_driver两部分
+   platform_device : 指定硬件资源, 来自.c文件
+   platform_driver : 根据与之匹配的platform_device获得硬件资源, 并分配/设置/注册file_operations
+b. 实际上platform_device也可以来自设备树文件.dts
+   dts文件被编译为dtb文件, 
+   dtb文件会传给内核, 
+   内核会解析dtb文件, 构造出一系列的device_node结构体,
+   device_node结构体会转换为platform_device结构体
+
+   所以: 我们可以在dts文件中指定资源, 不再需要在.c文件中设置platform_device结构体
+   
+c. "来自dts的platform_device结构体" 与 "我们写的platform_driver" 的匹配过程:
+    "来自dts的platform_device结构体"里面有成员".dev.of_node", 它里面含有各种属性, 比如 compatible, reg, pin
+    "我们写的platform_driver"里面有成员".driver.of_match_table", 它表示能支持哪些来自于dts的platform_device
+    
+    如果"of_node中的compatible" 跟 "of_match_table中的compatible" 一致, 就表示匹配成功, 则调用 platform_driver中的probe函数;
+    在probe函数中, 可以继续从of_node中获得各种属性来确定硬件资源
+
+第06节_只想使用不想深入研究怎么办
+
+这是无水之源、无根之木, 
+只能寄希望于写驱动程序的人: 提供了文档/示例/程序写得好适配性强
+
+一个写得好的驱动程序, 它会尽量确定所用资源, 
+只把不能确定的资源留给设备树, 让设备树来指定。
+
+根据原理图确定"驱动程序无法确定的硬件资源", 再在设备树文件中填写对应内容
+那么, 所填写内容的格式是什么? 
+
+a. 看文档: 内核 Documentation/devicetree/bindings/
+b. 参考同类型单板的设备树文件
+c. 网上搜索
+d. 实在没办法时, 只能去研究驱动源码
+
+
+第二课. 设备树的规范(dts和dtb)
+第01节_DTS格式
+(1) 语法:
+Devicetree node格式:
+[label:] node-name[@unit-address] {
+    [properties definitions]
+    [child nodes]
+};
+
+Property格式1:
+[label:] property-name = value;
+
+Property格式2(没有值):
+[label:] property-name;
+
+Property取值只有3种: 
+arrays of cells(1个或多个32位数据, 64位数据使用2个32位数据表示), 
+string(字符串), 
+bytestring(1个或多个字节)
+
+示例: 
+a. Arrays of cells : cell就是一个32位的数据
+interrupts = <17 0xc>;
+
+b. 64bit数据使用2个cell来表示:
+clock-frequency = <0x00000001 0x00000000>;
+
+c. A null-terminated string (有结束符的字符串):
+compatible = "simple-bus";
+
+d. A bytestring(字节序列) :
+local-mac-address = [00 00 12 34 56 78];  // 每个byte使用2个16进制数来表示
+local-mac-address = [000012345678];       // 每个byte使用2个16进制数来表示
+
+e. 可以是各种值的组合, 用逗号隔开:
+compatible = "ns16550", "ns8250";
+example = <0xf00f0000 19>, "a strange property format";
+
+
+(2) 
+DTS文件布局(layout):
+/dts-v1/;
+[memory reservations]    // 格式为: /memreserve/ <address> <length>;
+/ {
+    [property definitions]
+    [child nodes]
+};
+
+(3) 特殊的、默认的属性:
+a. 根节点:
+#address-cells   // 在它的子节点的reg属性中, 使用多少个u32整数来描述地址(address)
+#size-cells      // 在它的子节点的reg属性中, 使用多少个u32整数来描述大小(size)
+compatible       // 定义一系列的字符串, 用来指定内核中哪个machine_desc可以支持本设备
+                 // 即这个板子兼容哪些平台 
+                 // uImage : smdk2410 smdk2440 mini2440     ==> machine_desc         
+                 
+model            // 咱这个板子是什么
+                 // 比如有2款板子配置基本一致, 它们的compatible是一样的
+                 // 那么就通过model来分辨这2款板子
+
+b. /memory
+device_type = "memory";
+reg             // 用来指定内存的地址、大小
+
+c. /chosen
+bootargs        // 内核command line参数, 跟u-boot中设置的bootargs作用一样
+
+d. /cpus
+/cpus节点下有1个或多个cpu子节点, cpu子节点中用reg属性用来标明自己是哪一个cpu
+所以 /cpus 中有以下2个属性:
+#address-cells   // 在它的子节点的reg属性中, 使用多少个u32整数来描述地址(address)
+
+#size-cells      // 在它的子节点的reg属性中, 使用多少个u32整数来描述大小(size)
+                 // 必须设置为0
+
+
+e. /cpus/cpu*
+device_type = "cpu";
+reg             // 表明自己是哪一个cpu
+
+(4) 引用其他节点:
+a. phandle : // 节点中的phandle属性, 它的取值必须是唯一的(不要跟其他的phandle值一样)
+
+pic@10000000 {
+    phandle = <1>;
+    interrupt-controller;
+};
+
+another-device-node {
+    interrupt-parent = <1>;   // 使用phandle值为1来引用上述节点
+};
+
+b. label:
+
+PIC: pic@10000000 {
+    interrupt-controller;
+};
+
+another-device-node {
+    interrupt-parent = <&PIC>;   // 使用label来引用上述节点, 
+                                 // 使用lable时实际上也是使用phandle来引用, 
+                                 // 在编译dts文件为dtb文件时, 编译器dtc会在dtb中插入phandle属性
+};
+
+
+官方文档:
+https://www.devicetree.org/specifications/
+
+第02节_DTB格式
+官方文档:
+https://www.devicetree.org/specifications/
+
+内核文档:
+Documentation/devicetree/booting-without-of.txt
+
+DTB文件布局:
+             ------------------------------
+     base -> |  struct boot_param_header  |
+             ------------------------------
+             |      (alignment gap) (*)   |
+             ------------------------------
+             |      memory reserve map    |
+             ------------------------------
+             |      (alignment gap)       |
+             ------------------------------
+             |                            |
+             |    device-tree structure   |
+             |                            |
+             ------------------------------
+             |      (alignment gap)       |
+             ------------------------------
+             |                            |
+             |     device-tree strings    |
+             |                            |
+      -----> ------------------------------
+      |
+      |
+      --- (base + totalsize)
+
+
+第三课. 内核对设备树的处理
+Linux uses DT data for three major purposes:
+1) platform identification,
+2) runtime configuration, and
+3) device population.
+
+第01节_从源头分析_内核head.S对dtb的简单处理
+
+bootloader启动内核时,会设置r0,r1,r2三个寄存器,
+r0一般设置为0;
+r1一般设置为machine id (在使用设备树时该参数没有被使用); 
+r2一般设置ATAGS或DTB的开始地址
+
+bootloader给内核传递的参数时有2种方法：
+ATAGS 或 DTB
+
+对于ATAGS传参方法, 可以参考我们的"毕业班视频-自己写bootloader"
+   从www.100ask.net下载页面打开百度网盘,
+   打开如下目录:
+        100ask分享的所有文件
+            006_u-boot_内核_根文件系统(新1期_2期间的衔接)
+                视频
+                    第002课_从0写bootloader_更深刻理解bootloader
+
+
+
+a. __lookup_processor_type : 使用汇编指令读取CPU ID, 根据该ID找到对应的proc_info_list结构体(里面含有这类CPU的初始化函数、信息)
+b. __vet_atags             : 判断是否存在可用的ATAGS或DTB
+c. __create_page_tables    : 创建页表, 即创建虚拟地址和物理地址的映射关系
+d. __enable_mmu            : 使能MMU, 以后就要使用虚拟地址了
+e. __mmap_switched         : 上述函数里将会调用__mmap_switched
+f. 把bootloader传入的r2参数, 保存到变量__atags_pointer中
+g. 调用C函数start_kernel
+
+head.S/head-common.S  : 
+把bootloader传来的r1值, 赋给了C变量: __machine_arch_type
+把bootloader传来的r2值, 赋给了C变量: __atags_pointer     // dtb首地址
+
+第02节_对设备树中平台信息的处理(选择machine_desc)
+a. 设备树根节点的compatible属性列出了一系列的字符串,
+   表示它兼容的单板名,
+   从"最兼容"到次之
+
+b. 内核中有多个machine_desc,
+   其中有dt_compat成员, 它指向一个字符串数组, 里面表示该machine_desc支持哪些单板
+
+c. 使用compatile属性的值, 
+   跟
+   每一个machine_desc.dt_compat
+   比较,
+   成绩为"吻合的compatile属性值的位置",
+   
+   成绩越低越匹配, 对应的machine_desc即被选中
+   
+   
+函数调用过程:
+start_kernel // init/main.c
+    setup_arch(&command_line);  // arch/arm/kernel/setup.c
+        mdesc = setup_machine_fdt(__atags_pointer);  // arch/arm/kernel/devtree.c
+                    early_init_dt_verify(phys_to_virt(dt_phys)  // 判断是否有效的dtb, drivers/of/ftd.c
+                                    initial_boot_params = params;
+                    mdesc = of_flat_dt_match_machine(mdesc_best, arch_get_next_mach);  // 找到最匹配的machine_desc, drivers/of/ftd.c
+                                    while ((data = get_next_compat(&compat))) {
+                                        score = of_flat_dt_match(dt_root, compat);
+                                        if (score > 0 && score < best_score) {
+                                            best_data = data;
+                                            best_score = score;
+                                        }
+                                    }
+                    
+        machine_desc = mdesc;
+
+        
+        
+第03节_对设备树中运行时配置信息的处理
+
+函数调用过程:
+start_kernel // init/main.c
+    setup_arch(&command_line);  // arch/arm/kernel/setup.c
+        mdesc = setup_machine_fdt(__atags_pointer);  // arch/arm/kernel/devtree.c
+                    early_init_dt_scan_nodes();      // drivers/of/ftd.c
+                        /* Retrieve various information from the /chosen node */
+                        of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);
+
+                        /* Initialize {size,address}-cells info */
+                        of_scan_flat_dt(early_init_dt_scan_root, NULL);
+
+                        /* Setup memory, calling early_init_dt_add_memory_arch */
+                        of_scan_flat_dt(early_init_dt_scan_memory, NULL);
+
+a. /chosen节点中bootargs属性的值, 存入全局变量： boot_command_line
+b. 确定根节点的这2个属性的值: #address-cells, #size-cells
+   存入全局变量: dt_root_addr_cells, dt_root_size_cells
+c. 解析/memory中的reg属性, 提取出"base, size", 最终调用memblock_add(base, size);
+   
+   
+第04节_dtb转换为device_node(unflatten)
+
+函数调用过程:
+start_kernel // init/main.c
+    setup_arch(&command_line);  // arch/arm/kernel/setup.c
+        arm_memblock_init(mdesc);   // arch/arm/kernel/setup.c
+            early_init_fdt_reserve_self();
+                    /* Reserve the dtb region */
+                    // 把DTB所占区域保留下来, 即调用: memblock_reserve
+                    early_init_dt_reserve_memory_arch(__pa(initial_boot_params),
+                                      fdt_totalsize(initial_boot_params),
+                                      0);           
+            early_init_fdt_scan_reserved_mem();  // 根据dtb中的memreserve信息, 调用memblock_reserve
+            
+        unflatten_device_tree();    // arch/arm/kernel/setup.c
+            __unflatten_device_tree(initial_boot_params, NULL, &of_root,
+                        early_init_dt_alloc_memory_arch, false);            // drivers/of/fdt.c
+                
+                /* First pass, scan for size */
+                size = unflatten_dt_nodes(blob, NULL, dad, NULL);
+                
+                /* Allocate memory for the expanded device tree */
+                mem = dt_alloc(size + 4, __alignof__(struct device_node));
+                
+                /* Second pass, do actual unflattening */
+                unflatten_dt_nodes(blob, mem, dad, mynodes);
+                    populate_node
+                        np = unflatten_dt_alloc(mem, sizeof(struct device_node) + allocl,
+                                    __alignof__(struct device_node));
+                        
+                        np->full_name = fn = ((char *)np) + sizeof(*np);
+                        
+                        populate_properties
+                                pp = unflatten_dt_alloc(mem, sizeof(struct property),
+                                            __alignof__(struct property));
+                            
+                                pp->name   = (char *)pname;
+                                pp->length = sz;
+                                pp->value  = (__be32 *)val;
+
+a. 在DTB文件中, 
+   每一个节点都以TAG(FDT_BEGIN_NODE, 0x00000001)开始, 节点内部可以嵌套其他节点,
+   每一个属性都以TAG(FDT_PROP, 0x00000003)开始
+
+b. 每一个节点都转换为一个device_node结构体:
+        struct device_node {
+            const char *name;  // 来自节点中的name属性, 如果没有该属性, 则设为"NULL"
+            const char *type;  // 来自节点中的device_type属性, 如果没有该属性, 则设为"NULL"
+            phandle phandle;
+            const char *full_name;  // 节点的名字, node-name[@unit-address]
+            struct fwnode_handle fwnode;
+
+            struct  property *properties;  // 节点的属性
+            struct  property *deadprops;    /* removed properties */
+            struct  device_node *parent;   // 节点的父亲
+            struct  device_node *child;    // 节点的孩子(子节点)
+            struct  device_node *sibling;  // 节点的兄弟(同级节点)
+        #if defined(CONFIG_OF_KOBJ)
+            struct  kobject kobj;
+        #endif
+            unsigned long _flags;
+            void    *data;
+        #if defined(CONFIG_SPARC)
+            const char *path_component_name;
+            unsigned int unique_id;
+            struct of_irq_controller *irq_trans;
+        #endif
+        };
+
+c. device_node结构体中有properties, 用来表示该节点的属性
+   每一个属性对应一个property结构体:
+        struct property {
+            char    *name;    // 属性名字, 指向dtb文件中的字符串
+            int length;       // 属性值的长度
+            void    *value;   // 属性值, 指向dtb文件中value所在位置, 数据仍以big endian存储
+            struct property *next;
+        #if defined(CONFIG_OF_DYNAMIC) || defined(CONFIG_SPARC)
+            unsigned long _flags;
+        #endif
+        #if defined(CONFIG_OF_PROMTREE)
+            unsigned int unique_id;
+        #endif
+        #if defined(CONFIG_OF_KOBJ)
+            struct bin_attribute attr;
+        #endif
+        };
+   
+d. 这些device_node构成一棵树, 根节点为: of_root
+
+
+
+第05节_device_node转换为platform_device
+
+dts -> dtb -> device_node -> platform_device
+
+两个问题:
+a. 哪些device_node可以转换为platform_device?
+根节点下含有compatile属性的子节点
+如果一个结点的compatile属性含有这些特殊的值("simple-bus","simple-mfd","isa","arm,amba-bus")之一, 那么它的子结点(需含compatile属性)也可以转换为platform_device
+i2c, spi等总线节点下的子节点, 应该交给对应的总线驱动程序来处理, 它们不应该被转换为platform_device
+
+b. 怎么转换?
+platform_device中含有resource数组, 它来自device_node的reg, interrupts属性;
+platform_device.dev.of_node指向device_node, 可以通过它获得其他属性
+
+本节总结:
+
+a. 内核函数of_platform_default_populate_init, 遍历device_node树, 生成platform_device
+b. 并非所有的device_node都会转换为platform_device
+   只有以下的device_node会转换:
+b.1 该节点必须含有compatible属性
+b.2 根节点的子节点(节点必须含有compatible属性)
+b.3 含有特殊compatible属性的节点的子节点(子节点必须含有compatible属性):
+    这些特殊的compatilbe属性为: "simple-bus","simple-mfd","isa","arm,amba-bus"
+
+b.4 示例: 
+    比如以下的节点, 
+    /mytest会被转换为platform_device, 
+    因为它兼容"simple-bus", 它的子节点/mytest/mytest@0 也会被转换为platform_device
+
+    /i2c节点一般表示i2c控制器, 它会被转换为platform_device, 在内核中有对应的platform_driver;
+    /i2c/at24c02节点不会被转换为platform_device, 它被如何处理完全由父节点的platform_driver决定, 一般是被创建为一个i2c_client。
+
+    类似的也有/spi节点, 它一般也是用来表示SPI控制器, 它会被转换为platform_device, 在内核中有对应的platform_driver;
+    /spi/flash@0节点不会被转换为platform_device, 它被如何处理完全由父节点的platform_driver决定, 一般是被创建为一个spi_device。
+    
+    / {
+          mytest {
+              compatile = "mytest", "simple-bus";
+              mytest@0 {
+                    compatile = "mytest_0";
+              };
+          };
+          
+          i2c {
+              compatile = "samsung,i2c";
+              at24c02 {
+                    compatile = "at24c02";                      
+              };
+          };
+
+          spi {
+              compatile = "samsung,spi";              
+              flash@0 {
+                    compatible = "winbond,w25q32dw";
+                    spi-max-frequency = <25000000>;
+                    reg = <0>;
+                  };
+          };
+      };
+
+
+函数调用过程: 
+a. of_platform_default_populate_init (drivers/of/platform.c) 被调用到过程:
+start_kernel     // init/main.c
+    rest_init();
+        pid = kernel_thread(kernel_init, NULL, CLONE_FS);
+                    kernel_init
+                        kernel_init_freeable();
+                            do_basic_setup();
+                                do_initcalls();
+                                    for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++)
+                                        do_initcall_level(level);  // 比如 do_initcall_level(3)
+                                                                               for (fn = initcall_levels[3]; fn < initcall_levels[3+1]; fn++)
+                                                                                    do_one_initcall(initcall_from_entry(fn));  // 就是调用"arch_initcall_sync(fn)"中定义的fn函数
+
+b. of_platform_default_populate_init  (drivers/of/platform.c) 生成platform_device的过程:
+of_platform_default_populate_init
+    of_platform_default_populate(NULL, NULL, NULL);
+        of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL)
+            for_each_child_of_node(root, child) {
+                rc = of_platform_bus_create(child, matches, lookup, parent, true);  // 调用过程看下面
+                            dev = of_device_alloc(np, bus_id, parent);   // 根据device_node节点的属性设置platform_device的resource
+                if (rc) {
+                    of_node_put(child);
+                    break;
+                }
+            }
+            
+c. of_platform_bus_create(bus, matches, ...)的调用过程(处理bus节点生成platform_devie, 并决定是否处理它的子节点):
+        dev = of_platform_device_create_pdata(bus, bus_id, platform_data, parent);  // 生成bus节点的platform_device结构体
+        if (!dev || !of_match_node(matches, bus))  // 如果bus节点的compatile属性不吻合matches成表, 就不处理它的子节点
+            return 0;
+
+        for_each_child_of_node(bus, child) {    // 取出每一个子节点
+            pr_debug("   create child: %pOF\n", child);
+            rc = of_platform_bus_create(child, matches, lookup, &dev->dev, strict);   // 处理它的子节点, of_platform_bus_create是一个递归调用
+            if (rc) {
+                of_node_put(child);
+                break;
+            }
+        }
+        
+d. I2C总线节点的处理过程:
+   /i2c节点一般表示i2c控制器, 它会被转换为platform_device, 在内核中有对应的platform_driver;
+   platform_driver的probe函数中会调用i2c_add_numbered_adapter:
+   
+   i2c_add_numbered_adapter   // drivers/i2c/i2c-core-base.c
+        __i2c_add_numbered_adapter
+            i2c_register_adapter
+                of_i2c_register_devices(adap);   // drivers/i2c/i2c-core-of.c
+                    for_each_available_child_of_node(bus, node) {
+                        client = of_i2c_register_device(adap, node);
+                                        client = i2c_new_device(adap, &info);   // 设备树中的i2c子节点被转换为i2c_client
+                    }
+                    
+e. SPI总线节点的处理过程:
+   /spi节点一般表示spi控制器, 它会被转换为platform_device, 在内核中有对应的platform_driver;
+   platform_driver的probe函数中会调用spi_register_master, 即spi_register_controller:
+   
+   spi_register_controller        // drivers/spi/spi.c
+        of_register_spi_devices   // drivers/spi/spi.c
+            for_each_available_child_of_node(ctlr->dev.of_node, nc) {
+                spi = of_register_spi_device(ctlr, nc);  // 设备树中的spi子节点被转换为spi_device
+                                spi = spi_alloc_device(ctlr);
+                                rc = of_spi_parse_dt(ctlr, spi, nc);
+                                rc = spi_add_device(spi);
+            }
+                    
+
+
+第06节_platform_device跟platform_driver的匹配
+
+drivers/base/platform.c
+
+a. 注册 platform_driver 的过程:
+platform_driver_register
+	__platform_driver_register
+		drv->driver.probe = platform_drv_probe;
+		driver_register
+			bus_add_driver
+				klist_add_tail(&priv->knode_bus, &bus->p->klist_drivers);    // 把 platform_driver 放入 platform_bus_type 的driver链表中
+				driver_attach
+					bus_for_each_dev(drv->bus, NULL, drv, __driver_attach);  // 对于plarform_bus_type下的每一个设备, 调用__driver_attach
+						__driver_attach
+							ret = driver_match_device(drv, dev);  // 判断dev和drv是否匹配成功
+										return drv->bus->match ? drv->bus->match(dev, drv) : 1;  // 调用 platform_bus_type.match
+							driver_probe_device(drv, dev);
+										really_probe
+											drv->probe  // platform_drv_probe
+												platform_drv_probe
+													struct platform_driver *drv = to_platform_driver(_dev->driver);
+													drv->probe
+							
+b. 注册 platform_device 的过程:
+platform_device_register
+	platform_device_add
+		device_add
+			bus_add_device
+				klist_add_tail(&dev->p->knode_bus, &bus->p->klist_devices); // 把 platform_device 放入 platform_bus_type的device链表中
+			bus_probe_device(dev);
+				device_initial_probe
+					__device_attach
+						ret = bus_for_each_drv(dev->bus, NULL, &data, __device_attach_driver); // // 对于plarform_bus_type下的每一个driver, 调用 __device_attach_driver
+									__device_attach_driver
+										ret = driver_match_device(drv, dev);
+													return drv->bus->match ? drv->bus->match(dev, drv) : 1;  // 调用platform_bus_type.match
+										driver_probe_device
+											
+匹配函数是platform_bus_type.match, 即platform_match,
+匹配过程按优先顺序罗列如下:
+a. 比较 platform_dev.driver_override 和 platform_driver.drv->name
+b. 比较 platform_dev.dev.of_node的compatible属性 和 platform_driver.drv->of_match_table
+c. 比较 platform_dev.name 和 platform_driver.id_table
+d. 比较 platform_dev.name 和 platform_driver.drv->name
+有一个成功, 即匹配成功
+
+											
+
+
+第四课. u-boot对设备树的支持
+
+第五课. 示例
+         1: 在s3c2440上使用设备树
+            修改u-boot
+            修改内核
+            
+         2: 在LCD驱动中使用设备树
+
+
+第六课. 专题: 中断
+
+
+
+
+
+
+
+
+
+
+00-Linux设备树系列-简介 - 飞翔de刺猬 - CSDN博客.html
+https://blog.csdn.net/lhl_blog/article/details/82387486
+
